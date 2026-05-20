@@ -68,6 +68,62 @@ lowerBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop (
 upperBoundary!(r,u,Φ,ν,i,j,N,λ,::Val{true}) = @loop r[I-δ(j,I),i] -= Φ[CIj(j,I,2)] over I ∈ slice(N,N[j],j,2)
 
 """
+    transport!(r, φ, u, Φ; D=0, λ=quick, perdir=())
+
+Scalar conservative advection–diffusion residual. Computes
+
+```
+r[I] = -∂_j (u_j φ - D ∂_j φ)
+```
+
+in cell-centered form using the same QUICK/CDS/vanLeer machinery as
+`conv_diff!`. `r` and `φ` are `D`-dimensional cell-centered arrays (size
+matching `Flow.p`); `u` is the WaterLily staggered velocity array
+(`size(u) == (size(φ)..., D)`); `Φ` is a workspace buffer of the same
+shape as `φ` (e.g. `Flow.σ`).
+
+`D` is the scalar diffusivity, either a number or a cell-centered array
+matching `φ` (same hook as PLAN 1 Hook 1).
+
+This is PLAN 1 Hook 2 — the building block for VoF α-advection, RANS
+scalar transport, and any future passive scalar.
+"""
+function transport!(r::AbstractArray{T,Dim},
+                    φ::AbstractArray{T,Dim},
+                    u::AbstractArray{T},
+                    Φ::AbstractArray{T,Dim};
+                    D_diff=zero(T), λ=quick, perdir=()) where {T,Dim}
+    @assert ndims(u) == Dim + 1 "u must have ndims(φ)+1 dimensions"
+    r .= zero(T)
+    N = size(φ)
+    for j in 1:Dim
+        tagper = j in perdir
+        scalar_lowerBoundary!(r, φ, u, Φ, D_diff, j, N, λ, Val{tagper}())
+        @loop (Φ[I] = ϕu(j,I,φ,u[CI(I,j)],λ) - _ν(D_diff,I)*∂(j,I,φ);
+               r[I] += Φ[I]) over I ∈ inside_scalar_j(N, j)
+        @loop r[I-δ(j,I)] -= Φ[I] over I ∈ inside_scalar_j(N, j)
+        scalar_upperBoundary!(r, φ, u, Φ, D_diff, j, N, λ, Val{tagper}())
+    end
+    return r
+end
+
+# Interior indices for the scalar transport flux loop in direction j:
+# all cells whose `j` coordinate is in 3:N[j]-1 — the same buffer the
+# QUICK stencil needs (-2δ to +δ in direction j).
+@inline inside_scalar_j(N::NTuple{D}, j) where D =
+    CartesianIndices(ntuple(k -> k == j ? (3:N[k]-1) : (2:N[k]-1), D))
+
+# Neumann (zero-gradient) scalar boundaries: drop the upstream stencil
+# point and use ϕuL/ϕuR.
+scalar_lowerBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I] += ϕuL(j,I,φ,u[CI(I,j)],λ) - _ν(D_diff,I)*∂(j,I,φ) over I ∈ slice(N, 2, j, 2)
+scalar_upperBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{false}) = @loop r[I-δ(j,I)] += -ϕuR(j,I,φ,u[CI(I,j)],λ) + _ν(D_diff,I)*∂(j,I,φ) over I ∈ slice(N, N[j], j, 2)
+
+# Periodic scalar boundaries.
+scalar_lowerBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{true}) = @loop (
+    Φ[I] = ϕuP(j,CIj(j,I,N[j]-2),I,φ,u[CI(I,j)],λ) - _ν(D_diff,I)*∂(j,I,φ); r[I] += Φ[I]) over I ∈ slice(N, 2, j, 2)
+scalar_upperBoundary!(r,φ,u,Φ,D_diff,j,N,λ,::Val{true}) = @loop r[I-δ(j,I)] -= Φ[CIj(j,I,2)] over I ∈ slice(N, N[j], j, 2)
+
+"""
     accelerate!(r,t,g,U)
 
 Accounts for applied and reference-frame acceleration using `rᵢ += g(i,x,t)+dU(i,x,t)/dt`
