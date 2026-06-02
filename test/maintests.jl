@@ -248,6 +248,7 @@ end
 end
 
 include("effective_nu_test.jl")
+include("variable_density_test.jl")
 
 @testset "Body.jl" begin
     @test WaterLily.μ₀(3.,6)==WaterLily.μ₀(0.5,1)

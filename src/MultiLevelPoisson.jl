@@ -67,6 +67,48 @@ function update!(ml::MultiLevelPoisson)
     end
 end
 
+# Finest-level face-coefficient array (the one the projection corrects with
+# and the one `update!` restricts to coarser levels). For a bare `Poisson`
+# this is `p.L`; for a `MultiLevelPoisson` it is `levels[1].L` — which for the
+# default constructor aliases `ml.L`, so writing it updates both.
+fineL(p::Poisson) = p.L
+fineL(p::MultiLevelPoisson) = p.levels[1].L
+
+# 1/ρ at the d-face of cell I, either read from an array (`invρ[I,d]`) or
+# evaluated from a caller-supplied closure (`invρ(d,I)`). The closure keeps
+# the face-averaging convention (arithmetic-mean-of-1/ρ, f-then-ρ, harmonic,
+# …) in the downstream package rather than baking one choice into the core.
+@inline _invρf(invρ::AbstractArray, d, I) = @inbounds invρ[I, d]
+@inline _invρf(invρ, d, I) = invρ(d, I)
+
+"""
+    density_coefficient!(pois, μ₀, invρ; perdir=())
+
+Set the pressure-Poisson face coefficients for a **variable-density**
+projection: `L[I,d] = μ₀[I,d] · (1/ρ)_face(d,I)`, then refresh the solver
+(`update!`, recomputing the diagonal and restricting `L` through the
+multigrid levels). Call once per step after the density field changes —
+the constant-density case needs nothing (`L === μ₀`).
+
+`invρ` supplies `1/ρ` on the **faces**, either as
+  * an `AbstractArray` shaped like `μ₀` (`invρ[I,d]`), or
+  * a callable `invρ(d, I)` evaluated on the fly (no stored `1/ρ` array),
+
+so the face-averaging convention stays with the caller (VoF averages
+`1/ρ`; geometric-VoF packages average the volume fraction first). Folding
+in the *measured* `μ₀` keeps moving immersed bodies and the density jump
+consistent in one place.
+"""
+function density_coefficient!(pois::AbstractPoisson, μ₀, invρ; perdir=())
+    L = fineL(pois); N, D = size_u(L)
+    for d in 1:D
+        @loop L[I,d] = μ₀[I,d] * _invρf(invρ, d, I) over I ∈ inside_u(N, d)
+    end
+    BC!(L, zeros(SVector{D,eltype(L)}), false, perdir)  # μ₀ no-flux wall convention
+    update!(pois)
+    return pois
+end
+
 function Vcycle!(ml::MultiLevelPoisson;l=1,ω=1)
     fine,coarse = ml.levels[l],ml.levels[l+1]
     # set up coarse level
