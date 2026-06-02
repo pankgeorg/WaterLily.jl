@@ -15,7 +15,7 @@ include("Poisson.jl")
 export AbstractPoisson,Poisson,solver!,mult!
 
 include("MultiLevelPoisson.jl")
-export MultiLevelPoisson,solver!,mult!
+export MultiLevelPoisson,solver!,mult!,density_coefficient!
 
 include("Flow.jl")
 export AbstractFlow,Flow,mom_step!,quick,cds
