@@ -99,11 +99,14 @@ so the face-averaging convention stays with the caller (VoF averages
 in the *measured* `μ₀` keeps moving immersed bodies and the density jump
 consistent in one place.
 """
-function density_coefficient!(pois::AbstractPoisson, μ₀::AbstractArray{T,Mp1}, invρ; perdir=()) where {T,Mp1}
-    D = Mp1 - 1   # spatial dimension from μ₀'s type, so SVector{D} below is concrete
+function density_coefficient!(pois::AbstractPoisson, μ₀::AbstractArray{T,Mp1}, invρ::F; perdir=()) where {T,Mp1,F}
+    # `D` from μ₀'s type parameter (so `SVector{D}` below is concrete, not a
+    # runtime-`size` value which would be type-unstable and heap-allocate),
+    # and `invρ::F` forces specialization so the closure call inlines.
+    D = Mp1 - 1
     L = fineL(pois)
-    R = inside_u(L)   # 2:N-1 in each spatial dim — the face-coefficient range
-                      # used by `restrictL!`/μ₀ (NOT the wider convective-flux range)
+    R = inside_u(L)   # 2:N-1 per spatial dim — the face-coefficient range
+                      # (matches μ₀/`restrictL!`, NOT the convective-flux range)
     for d in 1:D
         @loop L[I,d] = μ₀[I,d] * _invρf(invρ, d, I) over I ∈ R
     end
