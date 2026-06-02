@@ -99,14 +99,15 @@ so the face-averaging convention stays with the caller (VoF averages
 in the *measured* `μ₀` keeps moving immersed bodies and the density jump
 consistent in one place.
 """
-function density_coefficient!(pois::AbstractPoisson, μ₀, invρ; perdir=())
-    L = fineL(pois); D = size(L)[end]
+function density_coefficient!(pois::AbstractPoisson, μ₀::AbstractArray{T,Mp1}, invρ; perdir=()) where {T,Mp1}
+    D = Mp1 - 1   # spatial dimension from μ₀'s type, so SVector{D} below is concrete
+    L = fineL(pois)
     R = inside_u(L)   # 2:N-1 in each spatial dim — the face-coefficient range
                       # used by `restrictL!`/μ₀ (NOT the wider convective-flux range)
     for d in 1:D
         @loop L[I,d] = μ₀[I,d] * _invρf(invρ, d, I) over I ∈ R
     end
-    BC!(L, zeros(SVector{D,eltype(L)}), false, perdir)  # μ₀ no-flux wall convention
+    BC!(L, zeros(SVector{D,T}), false, perdir)  # μ₀ no-flux wall convention
     update!(pois)
     return pois
 end
