@@ -100,9 +100,11 @@ in the *measured* `μ₀` keeps moving immersed bodies and the density jump
 consistent in one place.
 """
 function density_coefficient!(pois::AbstractPoisson, μ₀, invρ; perdir=())
-    L = fineL(pois); N, D = size_u(L)
+    L = fineL(pois); D = size(L)[end]
+    R = inside_u(L)   # 2:N-1 in each spatial dim — the face-coefficient range
+                      # used by `restrictL!`/μ₀ (NOT the wider convective-flux range)
     for d in 1:D
-        @loop L[I,d] = μ₀[I,d] * _invρf(invρ, d, I) over I ∈ inside_u(N, d)
+        @loop L[I,d] = μ₀[I,d] * _invρf(invρ, d, I) over I ∈ R
     end
     BC!(L, zeros(SVector{D,eltype(L)}), false, perdir)  # μ₀ no-flux wall convention
     update!(pois)
