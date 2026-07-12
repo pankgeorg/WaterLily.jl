@@ -122,3 +122,14 @@ using StaticArrays
     end
 
 end
+
+@testset "_νf face-averages a closure ν" begin
+    # A scalar ν is returned unchanged; a closure ν(I) is read per cell
+    # and arithmetically averaged to the cell face.
+    @test WaterLily._νf(0.5, 1, CartesianIndex(2, 2)) == 0.5
+    @test WaterLily._ν(0.5, CartesianIndex(2, 2)) == 0.5
+    νc = I -> Float32(I[1])          # ν grows with the x index
+    @test WaterLily._ν(νc, CartesianIndex(3, 2)) == 3.0f0
+    # Face j=1 at cell (3,2) lies between (2,2) and (3,2): mean = (3+2)/2
+    @test WaterLily._νf(νc, 1, CartesianIndex(3, 2)) == 2.5f0
+end
